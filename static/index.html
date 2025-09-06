@@ -3,56 +3,77 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>MES — анонимный мессенджер</title>
-  <link rel="stylesheet" href="/static/style.css"/>
+  <title>MES Pro+ — Анонимный Мессенджер</title>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
+  <div class="cyber-grid"></div>
+  <div class="cyber-orbs" id="orbs"></div>
+  
   <div class="container">
-    <header>
-      <h1>MES</small></h1>
-      <div class="status">
-        <span id="statusDot" class="dot"></span>
-        <span id="statusText">offline</span>
-        <span id="onlineCount" title="Кто сейчас в комнате">0</span>
+    <header class="glass-panel header">
+      <div class="header-content">
+        <div class="brand-section">
+          <div class="logo-icon">M</div>
+          <div class="brand-text">
+            <h1>MES PRO+</h1>
+            <div class="subtitle">QUANTUM ENCRYPTED MESSENGER</div>
+          </div>
+        </div>
+        <div class="status-display">
+          <div class="status-item">
+            <span id="statusDot" class="status-dot"></span>
+            <span id="statusText">OFFLINE</span>
+          </div>
+          <div class="status-item">
+            <span>👥</span>
+            <span id="onlineCount" class="online-counter">0</span>
+          </div>
+        </div>
       </div>
     </header>
 
-    <section class="room">
-      <div class="row wrap">
-        <button id="createRoom">Создать комнату</button>
-        <input id="nickname" placeholder="Ник (необязательно)"/>
-        <button id="copyInvite">Скопировать приглашение</button>
-        <button id="endChat" class="danger">Завершить чат</button>
+    <section class="glass-panel controls-panel">
+      <div class="controls-row">
+        <button id="createRoom" class="neon-btn btn-primary">🚀 Создать комнату</button>
+        <input id="nickname" class="cyber-input" placeholder="Введите никнейм..." maxlength="24"/>
+        <button id="copyInvite" class="neon-btn btn-secondary">📋 Копировать ссылку</button>
+        <button id="endChat" class="neon-btn btn-danger">🔥 Завершить чат</button>
       </div>
-      <div class="row tips">
-        <span>Ключ и соль в ссылке <b>после #</b> (на сервер не уходят). История хранится, пока чат не завершён.</span>
+      <div class="info-panel">
+        <div class="content">
+          <strong>Квантовая безопасность:</strong> Ключ шифрования находится в URL после символа # и никогда не передается на сервер. 
+          История сообщений сохраняется локально до завершения чата.
+        </div>
       </div>
     </section>
 
-    <main id="chat" class="chat">
-      <ul id="messages"></ul>
+    <main class="glass-panel chat-container">
+      <ul id="messages" class="messages-list"></ul>
     </main>
 
-    <footer class="input">
-      <div class="left">
-        <textarea id="input" rows="2" placeholder="Введите сообщение..."></textarea>
-        <div class="actions">
-          <label class="fileBtn">📎 Прикрепить файл
-            <input type="file" id="fileInput" multiple style="display:none"/>
-          </label>
-          <select id="voiceEffect" title="Эффект голоса">
-            <option value="none">Голос: без эффекта</option>
-            <option value="robot">Голос: робот</option>
-            <option value="chipmunk">Голос: высокий</option>
-            <option value="deep">Голос: низкий</option>
-          </select>
-          <button id="voiceBtn" title="Записать голосовое">🎙️</button>
+    <footer class="glass-panel input-section">
+      <div class="input-layout">
+        <div class="input-area">
+          <textarea id="input" class="message-input" rows="3" placeholder="Введите ваше квантовое сообщение..."></textarea>
+          <div class="action-bar">
+            <label class="file-upload-btn">
+              📎 Прикрепить файл
+              <input type="file" id="fileInput" multiple style="display:none"/>
+            </label>
+            <select id="voiceEffect" class="voice-selector">
+              <option value="none">🎤 Обычный голос</option>
+              <option value="robot">🤖 Голос робота</option>
+              <option value="chipmunk">🐿️ Высокий голос</option>
+              <option value="deep">🎭 Низкий голос</option>
+            </select>
+            <button id="voiceBtn" class="voice-record-btn" title="Записать голосовое сообщение">🎙️</button>
+          </div>
         </div>
+        <button id="send" class="send-message-btn" title="Отправить сообщение">➤</button>
       </div>
-      <button id="send">Отправить</button>
     </footer>
   </div>
-
   <script src="/static/mes.js"></script>
 </body>
 </html>
