@@ -95,5 +95,5 @@ async def broadcast_count(room_id: str):
 
 if __name__ == "__main__":
     import uvicorn, os
-    uvicorn.run("app:app", host="0.0.0.0", port=8000)
-
+    port = int(os.environ.get("PORT", "10000"))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
