@@ -1,3 +1,16 @@
+// Create floating orbs
+function createCyberOrbs() {
+  const container = document.getElementById('orbs');
+  for (let i = 0; i < 30; i++) {
+    const orb = document.createElement('div');
+    orb.className = 'orb';
+    orb.style.left = Math.random() * 100 + '%';
+    orb.style.animationDelay = Math.random() * 15 + 's';
+    orb.style.animationDuration = (Math.random() * 8 + 10) + 's';
+    container.appendChild(orb);
+  }
+}
+
 // MES Pro+
 // - Chunked transfer with progress bars (up to very large files)
 // - Text, images, files, voice messages with stronger disguise (robot / simple pitch)
@@ -39,6 +52,8 @@ const CHUNK_SIZE = 256 * 1024; // 256 KiB
 init().catch(console.error);
 
 async function init() {
+  createCyberOrbs();
+  
   if (roomId) {
     const saved = localStorage.getItem(storageKey(roomId));
     if (saved) {
@@ -76,7 +91,7 @@ async function init() {
     if (!roomId || !secretB || !saltB) return alert('Сначала создайте комнату');
     const url = `${location.origin}/room/${roomId}#k=${bytesToBase64url(secretB)}&s=${bytesToBase64url(saltB)}`;
     await navigator.clipboard.writeText(url);
-    notify('Ссылка скопирована');
+    notify('🔗 Квантовая ссылка-приглашение скопирована в буфер обмена');
   };
 
   els.endChat.onclick = () => {
@@ -94,406 +109,621 @@ async function init() {
   els.voiceBtn.addEventListener('click', handleVoice);
 }
 
-function setOnline(){ els.statusDot.classList.add('online'); els.statusText.textContent='online'; }
-function setOffline(){ els.statusDot.classList.remove('online'); els.statusText.textContent='offline'; }
-
-function notify(txt) {
-  const li = document.createElement('li');
-  li.className = 'meta';
-  li.textContent = txt;
-  els.messages.appendChild(li);
-  els.messages.scrollTop = els.messages.scrollHeight;
+function notify(msg) {
+  // Create a simple notification
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, var(--red-neon), var(--red-bright));
+    color: white;
+    padding: 16px 24px;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(255, 10, 92, 0.4);
+    z-index: 10000;
+    font-weight: 600;
+    animation: slideIn 0.3s ease;
+  `;
+  notification.textContent = msg;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.style.animation = 'slideOut 0.3s ease forwards';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
 }
 
-function randomId(n) {
-  const arr = crypto.getRandomValues(new Uint8Array(n));
-  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let out=''; for (let b of arr) out += alphabet[b % alphabet.length];
-  return out;
+function randomId(len) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < len; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 }
 
-async function deriveKey(secretBytes, saltBytes) {
-  const keyMaterial = await crypto.subtle.importKey('raw', secretBytes, {name: 'PBKDF2'}, false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    {name: 'PBKDF2', salt: saltBytes, iterations: 200_000, hash: 'SHA-256'},
+function base64urlToBytes(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return new Uint8Array([...atob(str)].map(c => c.charCodeAt(0)));
+}
+
+function bytesToBase64url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function deriveKey(secret, salt) {
+  const keyMaterial = await crypto.subtle.importKey('raw', secret, { name: 'PBKDF2' }, false, ['deriveKey']);
+  return await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
     keyMaterial,
-    {name: 'AES-GCM', length: 256},
+    { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt']
   );
 }
 
-function connect() {
-  if (!roomId) return;
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsUrl = `${proto}://${location.host}/ws/${roomId}`;
-  ws = new WebSocket(wsUrl);
-
-  ws.onopen = () => { setOnline(); notify(`Подключено к комнате ${roomId}`); };
-  ws.onclose = () => { setOffline(); notify('Соединение закрыто'); };
-  ws.onerror = () => { setOffline(); notify('Ошибка соединения'); };
-
-  ws.onmessage = async (ev) => {
-    let dataStr = typeof ev.data === 'string' ? ev.data : await ev.data.text();
-    try {
-      const data = JSON.parse(dataStr);
-      if (data && data._control === 'online') {
-        els.onlineCount.textContent = String(data.count);
-        return;
-      }
-    } catch(_) {}
-
-    // Encrypted packet
-    try {
-      const packet = JSON.parse(dataStr);
-      if (!packet.ct || !packet.iv) return;
-      const iv = base64urlToBytes(packet.iv);
-      const ct = base64urlToBytes(packet.ct);
-      const dec = await crypto.subtle.decrypt({name: 'AES-GCM', iv}, key, ct);
-      const str = new TextDecoder().decode(new Uint8Array(dec));
-      const msg = JSON.parse(str);
-      onDecryptedMessage(msg);
-    } catch(e) {
-      // ignore
-    }
-  };
-}
-
-function onDecryptedMessage(msg){
-  if (msg.kind === 'chunk') {
-    const id = msg.fileId;
-    if (!assembling.has(id)) {
-      assembling.set(id, { total: msg.total, got: 0, chunks: new Array(msg.total), meta: msg.meta });
-    }
-    const entry = assembling.get(id);
-    entry.chunks[msg.seq] = msg.data; // base64url string
-    entry.got++;
-    updateProgress(id, entry.got / entry.total, false);
-    if (entry.got === entry.total) {
-      // assemble
-      const b64 = entry.chunks.join('');
-      const bytes = base64urlToBytes(b64);
-      const meta = entry.meta;
-      const kind = meta.kind;
-      const payload = {
-        id: id,
-        kind: kind,
-        sender: msg.sender,
-        nick: msg.nick,
-        ts: msg.ts,
-        name: meta.name,
-        mime: meta.mime,
-        size: meta.size,
-        data: b64
-      };
-      addMessage(payload, false);
-      assembling.delete(id);
-    }
-    return;
-  }
-  // regular messages (text)
-  addMessage(msg, false);
-}
-
-function nowPayloadBase(type, extra={}){
-  return {
-    id: crypto.randomUUID(),
-    kind: type, // 'text' | 'image' | 'file' | 'audio' | 'chunk'
-    sender: meId,
-    nick: els.nickname.value.trim().slice(0, 24) || 'anon',
-    ts: Date.now(),
-    ...extra,
-  };
-}
-
-async function encryptAndSend(payload) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) { notify('Нет соединения'); return; }
-  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+async function encrypt(data) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, bytes);
-  const packet = { iv: bytesToBase64url(iv), ct: bytesToBase64url(new Uint8Array(ct)) };
-  ws.send(JSON.stringify(packet));
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  const result = new Uint8Array(iv.length + encrypted.byteLength);
+  result.set(iv, 0);
+  result.set(new Uint8Array(encrypted), iv.length);
+  return result;
+}
+
+async function decrypt(encryptedData) {
+  const iv = encryptedData.slice(0, 12);
+  const data = encryptedData.slice(12);
+  return await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+}
+
+function setOffline() {
+  els.statusDot.classList.remove('online');
+  els.statusText.textContent = 'OFFLINE';
+  els.onlineCount.textContent = '0';
+}
+
+function setOnline(count = 1) {
+  els.statusDot.classList.add('online');
+  els.statusText.textContent = 'ONLINE';
+  els.onlineCount.textContent = count.toString();
+}
+
+function connect() {
+  if (!roomId || !key) return;
+  
+  const wsUrl = `wss://${location.host}/ws/${roomId}`;
+  ws = new WebSocket(wsUrl);
+  
+  ws.onopen = () => {
+    console.log('Connected to room:', roomId);
+    setOnline();
+  };
+  
+  ws.onclose = () => {
+    console.log('Disconnected');
+    setOffline();
+    setTimeout(() => connect(), 3000);
+  };
+  
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    setOffline();
+  };
+  
+  ws.onmessage = handleMessage;
+}
+
+async function handleMessage(event) {
+  try {
+    const data = JSON.parse(event.data);
+    
+    if (data.type === 'online_count') {
+      setOnline(data.count);
+      return;
+    }
+    
+    if (data.type === 'chunk') {
+      await handleChunk(data);
+      return;
+    }
+    
+    if (data.encrypted) {
+      const encryptedBytes = base64urlToBytes(data.encrypted);
+      const decryptedBytes = await decrypt(encryptedBytes);
+      const decryptedText = new TextDecoder().decode(decryptedBytes);
+      const message = JSON.parse(decryptedText);
+      
+      const isSelf = message.sender === meId;
+      renderMessage(message, isSelf);
+      
+      if (!isSelf) {
+        historyCache.push(message);
+        localStorage.setItem(storageKey(roomId), JSON.stringify(historyCache));
+      }
+    }
+  } catch (error) {
+    console.error('Error handling message:', error);
+  }
+}
+
+async function handleChunk(data) {
+  const { fileId, chunkIndex, totalChunks, chunkData, meta } = data;
+  
+  if (!assembling.has(fileId)) {
+    assembling.set(fileId, { 
+      total: totalChunks, 
+      got: 0, 
+      chunks: new Array(totalChunks),
+      meta 
+    });
+  }
+  
+  const assembly = assembling.get(fileId);
+  assembly.chunks[chunkIndex] = base64urlToBytes(chunkData);
+  assembly.got++;
+  
+  // Update progress
+  const progress = Math.round((assembly.got / assembly.total) * 100);
+  updateProgress(fileId, progress);
+  
+  if (assembly.got === assembly.total) {
+    // Reconstruct file
+    const totalSize = assembly.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const fileData = new Uint8Array(totalSize);
+    let offset = 0;
+    
+    for (const chunk of assembly.chunks) {
+      fileData.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    // Decrypt file data
+    const decryptedData = await decrypt(fileData);
+    
+    // Create message
+    const message = {
+      id: fileId,
+      sender: assembly.meta.sender,
+      nickname: assembly.meta.nickname,
+      timestamp: assembly.meta.timestamp,
+      type: 'file',
+      filename: assembly.meta.filename,
+      size: assembly.meta.size,
+      mimeType: assembly.meta.mimeType,
+      data: bytesToBase64url(new Uint8Array(decryptedData))
+    };
+    
+    const isSelf = message.sender === meId;
+    renderMessage(message, isSelf);
+    
+    if (!isSelf) {
+      historyCache.push(message);
+      localStorage.setItem(storageKey(roomId), JSON.stringify(historyCache));
+    }
+    
+    assembling.delete(fileId);
+  }
+}
+
+function updateProgress(fileId, progress) {
+  const progressElement = document.querySelector(`[data-file-id="${fileId}"] .loading-progress`);
+  if (progressElement) {
+    progressElement.style.width = progress + '%';
+  }
 }
 
 async function sendText() {
   const text = els.input.value.trim();
-  if (!text) return;
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  
+  const message = {
+    id: randomId(8),
+    sender: meId,
+    nickname: els.nickname.value.trim() || 'Анонимный',
+    timestamp: Date.now(),
+    type: 'text',
+    text
+  };
+  
+  await sendMessage(message);
+  renderMessage(message, true);
+  
+  historyCache.push(message);
+  localStorage.setItem(storageKey(roomId), JSON.stringify(historyCache));
+  
   els.input.value = '';
-  const payload = nowPayloadBase('text', { text });
-  addMessage(payload, true);
-  await encryptAndSend(payload);
 }
 
-async function handleFiles(ev){
-  const files = Array.from(ev.target.files || []);
-  ev.target.value = '';
-  for (const file of files) {
-    await sendLargeBlob(file, file.type.startsWith('image/') ? 'image' : 'file');
-  }
+async function sendMessage(message) {
+  const messageJson = JSON.stringify(message);
+  const messageBytes = new TextEncoder().encode(messageJson);
+  const encryptedBytes = await encrypt(messageBytes);
+  const encryptedB64 = bytesToBase64url(encryptedBytes);
+  
+  ws.send(JSON.stringify({ encrypted: encryptedB64 }));
 }
 
-async function sendLargeBlob(file, kind){
-  const arrayBuf = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuf);
-  const b64 = bytesToBase64url(bytes);
-  const fileId = crypto.randomUUID();
-  const chunkLen = CHUNK_SIZE * 4 // base64 grows; keep UI chunking by raw byte size
-  const total = Math.ceil(b64.length / chunkLen);
-  const meta = { name: file.name, mime: file.type || 'application/octet-stream', size: file.size, kind };
-
-  // optimistic placeholder with progress
-  createProgressCard(fileId, meta, true);
-  for (let i=0, seq=0; i < b64.length; i += chunkLen, seq++) {
-    const part = b64.slice(i, i + chunkLen);
-    const chunkMsg = nowPayloadBase('chunk', {
-      fileId, seq, total, meta, data: part
-    });
-    updateProgress(fileId, (seq+1)/total, true);
-    await encryptAndSend(chunkMsg);
-  }
-  // After last chunk, render final message locally
-  const donePayload = nowPayloadBase(kind, { name: meta.name, mime: meta.mime, size: meta.size, data: b64 });
-  donePayload.id = fileId;
-  addMessage(donePayload, true);
-  removeProgressCard(fileId);
-}
-
-function createProgressCard(id, meta, mine){
+function renderMessage(message, isSelf, isHistory = false) {
   const li = document.createElement('li');
-  li.className = 'msg' + (mine ? ' me' : '');
-  li.id = `progress-${id}`;
-  const metaDiv = document.createElement('div');
-  metaDiv.className = 'meta';
-  metaDiv.textContent = `${els.nickname.value || 'anon'} • отправка ${meta.name}…`;
-  const body = document.createElement('div');
-  body.innerHTML = `<div class="file">${meta.name} (${prettySize(meta.size)})</div>
-    <div class="progress"><span style="width:0%"></span></div>`;
-  li.appendChild(metaDiv); li.appendChild(body);
+  li.className = `message ${isSelf ? 'me' : ''}`;
+  
+  if (message.type === 'meta') {
+    li.className = 'message meta';
+    li.innerHTML = `<div class="message-text">${message.text}</div>`;
+  } else {
+    const time = new Date(message.timestamp).toLocaleTimeString('ru-RU', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    let content = '';
+    if (message.type === 'text') {
+      content = `
+        <div class="message-header">${message.nickname} • ${time}</div>
+        <div class="message-text">${escapeHtml(message.text)}</div>
+      `;
+    } else if (message.type === 'file') {
+      content = renderFileContent(message, time);
+    }
+    
+    li.innerHTML = content;
+  }
+  
   els.messages.appendChild(li);
-  els.messages.scrollTop = els.messages.scrollHeight;
-}
-function updateProgress(id, frac, mine){
-  const el = document.getElementById(`progress-${id}`);
-  if (!el) return;
-  const bar = el.querySelector('.progress>span');
-  if (bar) bar.style.width = `${(Math.min(1, Math.max(0, frac))*100).toFixed(1)}%`;
-}
-function removeProgressCard(id){
-  const el = document.getElementById(`progress-${id}`);
-  if (el && el.parentNode) el.parentNode.removeChild(el);
+  
+  if (!isHistory) {
+    li.scrollIntoView({ behavior: 'smooth' });
+  }
 }
 
-// Voice recording with stronger disguise.
-// We collect raw PCM via ScriptProcessor, then post-process:
-// - robot: ring modulation + distortion
-// - chipmunk: speed up 1.5x (higher pitch)
-// - deep: slow 0.8x (lower pitch)
-// Encoded as WAV (PCM16).
+function renderFileContent(message, time) {
+  const { filename, mimeType, size, data } = message;
+  
+  let fileContent = '';
+  
+  if (mimeType.startsWith('image/')) {
+    fileContent = `<img src="data:${mimeType};base64,${data}" alt="${filename}" class="preview-img">`;
+  } else if (mimeType.startsWith('audio/')) {
+    fileContent = `<audio controls class="audio-element"><source src="data:${mimeType};base64,${data}" type="${mimeType}"></audio>`;
+  } else {
+    const blob = new Blob([base64urlToBytes(data)], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    fileContent = `
+      <div class="file-preview-box">
+        <a href="${url}" download="${filename}" class="file-link">${filename}</a>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 5px;">
+          ${formatFileSize(size)}
+        </div>
+      </div>
+    `;
+  }
+  
+  return `
+    <div class="message-header">${message.nickname} • ${time}</div>
+    <div class="message-text">${fileContent}</div>
+  `;
+}
 
-let recStream=null, recCtx=null, spNode=null, pcmL=[];
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
-async function handleVoice(){
-  if (spNode) { // stop
-    stopRecording();
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+}
+
+async function handleFiles(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length || !ws || ws.readyState !== WebSocket.OPEN) return;
+  
+  for (const file of files) {
+    await sendFile(file);
+  }
+  
+  event.target.value = '';
+}
+
+async function sendFile(file) {
+  const fileId = randomId(12);
+  const reader = new FileReader();
+  
+  reader.onload = async () => {
+    const fileData = new Uint8Array(reader.result);
+    const encryptedData = await encrypt(fileData);
+    
+    const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
+    const meta = {
+      sender: meId,
+      nickname: els.nickname.value.trim() || 'Анонимный',
+      timestamp: Date.now(),
+      filename: file.name,
+      size: file.size,
+      mimeType: file.type
+    };
+    
+    // Show progress message
+    const progressMessage = {
+      id: fileId,
+      sender: meId,
+      nickname: meta.nickname,
+      timestamp: meta.timestamp,
+      type: 'progress',
+      filename: file.name
+    };
+    
+    renderProgressMessage(progressMessage);
+    
+    // Send chunks
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, encryptedData.length);
+      const chunk = encryptedData.slice(start, end);
+      
+      const chunkData = {
+        type: 'chunk',
+        fileId,
+        chunkIndex: i,
+        totalChunks,
+        chunkData: bytesToBase64url(chunk),
+        meta: i === 0 ? meta : undefined
+      };
+      
+      ws.send(JSON.stringify(chunkData));
+      
+      // Update progress
+      const progress = Math.round(((i + 1) / totalChunks) * 100);
+      updateProgress(fileId, progress);
+      
+      // Small delay to prevent overwhelming
+      if (i % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+  };
+  
+  reader.readAsArrayBuffer(file);
+}
+
+function renderProgressMessage(message) {
+  const li = document.createElement('li');
+  li.className = 'message me';
+  li.setAttribute('data-file-id', message.id);
+  
+  const time = new Date(message.timestamp).toLocaleTimeString('ru-RU', { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+  
+  li.innerHTML = `
+    <div class="message-header">${message.nickname} • ${time}</div>
+    <div class="message-text">
+      📤 Отправка файла: ${message.filename}
+      <div class="loading-bar">
+        <div class="loading-progress" style="width: 0%"></div>
+      </div>
+    </div>
+  `;
+  
+  els.messages.appendChild(li);
+  li.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Voice recording functionality
+let mediaRecorder = null;
+let recordedChunks = [];
+
+async function handleVoice() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Запись голоса не поддерживается в вашем браузере');
     return;
   }
+  
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    return;
+  }
+  
   try {
-    recStream = await navigator.mediaDevices.getUserMedia({audio: true});
-    recCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = recCtx.createMediaStreamSource(recStream);
-    spNode = recCtx.createScriptProcessor(4096, 1, 1);
-    source.connect(spNode); spNode.connect(recCtx.destination);
-    pcmL = [];
-    spNode.onaudioprocess = (e) => {
-      const ch = e.inputBuffer.getChannelData(0);
-      pcmL.push(new Float32Array(ch));
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    recordedChunks = [];
+    
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
     };
-    els.voiceBtn.textContent = '🔴';
-    notify('Запись начата… Нажмите ещё раз, чтобы остановить.');
-  } catch(e){
-    console.error(e); notify('Не удалось начать запись');
+    
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      await processVoiceRecording(blob);
+      
+      // Stop all tracks
+      stream.getTracks().forEach(track => track.stop());
+      
+      els.voiceBtn.classList.remove('recording');
+    };
+    
+    mediaRecorder.start();
+    els.voiceBtn.classList.add('recording');
+    
+  } catch (error) {
+    console.error('Error accessing microphone:', error);
+    alert('Не удалось получить доступ к микрофону');
   }
 }
 
-async function stopRecording(){
-  els.voiceBtn.textContent = '🎙️';
-  spNode.disconnect(); spNode = null;
-  recStream.getTracks().forEach(t => t.stop());
-  const rate = recCtx.sampleRate;
-  recCtx.close();
-  // Join PCM
-  let total = 0; for (const b of pcmL) total += b.length;
-  const pcm = new Float32Array(total);
-  let off=0; for (const b of pcmL) { pcm.set(b, off); off += b.length; }
-
-  // Apply effect
-  const mode = els.voiceEffect.value;
-  let processed = pcm, outRate = rate;
-  if (mode === 'robot') {
-    processed = ringModulate(pcm, rate, 35); // 35 Hz ring modulation
-    processed = softClip(processed, 2.5);
-  } else if (mode === 'chipmunk') {
-    const factor = 1.5;
-    processed = resample(pcm, rate, rate*factor);
-    outRate = rate; // we resampled then will encode at original rate -> higher pitch & shorter
-  } else if (mode === 'deep') {
-    const factor = 0.8;
-    processed = resample(pcm, rate, rate*factor);
-    outRate = rate;
+async function processVoiceRecording(blob) {
+  const effect = els.voiceEffect.value;
+  
+  if (effect === 'none') {
+    await sendVoiceMessage(blob);
+    return;
   }
-
-  // Encode WAV (PCM16)
-  const wav = pcmToWav(processed, outRate);
-  const bytes = new Uint8Array(wav);
-  const b64 = bytesToBase64url(bytes);
-  const payload = nowPayloadBase('audio', {
-    name: `voice-${new Date().toISOString().replace(/[:.]/g,'-')}.wav`,
-    mime: 'audio/wav',
-    size: bytes.byteLength,
-    data: b64
-  });
-  addMessage(payload, true);
-  await encryptAndSend(payload);
+  
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    
+    let processedBuffer;
+    
+    switch (effect) {
+      case 'robot':
+        processedBuffer = applyRobotEffect(audioBuffer, audioContext);
+        break;
+      case 'chipmunk':
+        processedBuffer = applyPitchEffect(audioBuffer, audioContext, 1.5);
+        break;
+      case 'deep':
+        processedBuffer = applyPitchEffect(audioBuffer, audioContext, 0.7);
+        break;
+      default:
+        processedBuffer = audioBuffer;
+    }
+    
+    const processedBlob = await audioBufferToBlob(processedBuffer, audioContext);
+    await sendVoiceMessage(processedBlob);
+    
+  } catch (error) {
+    console.error('Error processing audio:', error);
+    await sendVoiceMessage(blob);
+  }
 }
 
-// DSP helpers
-function ringModulate(pcm, rate, freq){
-  const out = new Float32Array(pcm.length);
-  for (let i=0;i<pcm.length;i++){
-    const mod = Math.sin(2*Math.PI*freq*(i/rate));
-    out[i] = pcm[i]*mod;
+function applyRobotEffect(audioBuffer, audioContext) {
+  const outputBuffer = audioContext.createBuffer(
+    audioBuffer.numberOfChannels,
+    audioBuffer.length,
+    audioBuffer.sampleRate
+  );
+  
+  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+    const inputData = audioBuffer.getChannelData(channel);
+    const outputData = outputBuffer.getChannelData(channel);
+    
+    for (let i = 0; i < inputData.length; i++) {
+      outputData[i] = Math.sign(inputData[i]) * Math.pow(Math.abs(inputData[i]), 0.5);
+    }
   }
-  return out;
+  
+  return outputBuffer;
 }
-function softClip(pcm, amount){
-  const out = new Float32Array(pcm.length);
-  for (let i=0;i<pcm.length;i++){
-    const x = pcm[i]*amount;
-    out[i] = Math.tanh(x);
-  }
-  return out;
-}
-function resample(pcm, inRate, outRate){
-  const ratio = outRate / inRate;
-  const n = Math.floor(pcm.length * (1/ratio));
-  const out = new Float32Array(n);
-  for (let i=0;i<n;i++){
-    const srcIndex = i*ratio;
-    const i0 = Math.floor(srcIndex);
-    const i1 = Math.min(pcm.length-1, i0+1);
-    const frac = srcIndex - i0;
-    out[i] = pcm[i0]*(1-frac) + pcm[i1]*frac;
-  }
-  return out;
-}
-function pcmToWav(pcm, sampleRate){
-  // 16-bit PCM mono
-  const bytesPerSample = 2;
-  const blockAlign = bytesPerSample * 1;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = pcm.length * bytesPerSample;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const dv = new DataView(buffer);
-  let p = 0;
-  function writeStr(s){ for (let i=0;i<s.length;i++) dv.setUint8(p++, s.charCodeAt(i)); }
-  function writeU32(v){ dv.setUint32(p, v, true); p+=4; }
-  function writeU16(v){ dv.setUint16(p, v, true); p+=2; }
 
-  writeStr('RIFF'); writeU32(36 + dataSize); writeStr('WAVE');
-  writeStr('fmt '); writeU32(16); writeU16(1); writeU16(1);
-  writeU32(sampleRate); writeU32(byteRate); writeU16(blockAlign); writeU16(16);
-  writeStr('data'); writeU32(dataSize);
-  // samples
+function applyPitchEffect(audioBuffer, audioContext, pitchFactor) {
+  const newLength = Math.floor(audioBuffer.length / pitchFactor);
+  const outputBuffer = audioContext.createBuffer(
+    audioBuffer.numberOfChannels,
+    newLength,
+    audioBuffer.sampleRate
+  );
+  
+  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+    const inputData = audioBuffer.getChannelData(channel);
+    const outputData = outputBuffer.getChannelData(channel);
+    
+    for (let i = 0; i < newLength; i++) {
+      const sourceIndex = Math.floor(i * pitchFactor);
+      if (sourceIndex < inputData.length) {
+        outputData[i] = inputData[sourceIndex];
+      }
+    }
+  }
+  
+  return outputBuffer;
+}
+
+async function audioBufferToBlob(audioBuffer, audioContext) {
+  const offlineContext = new OfflineAudioContext(
+    audioBuffer.numberOfChannels,
+    audioBuffer.length,
+    audioBuffer.sampleRate
+  );
+  
+  const source = offlineContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineContext.destination);
+  source.start();
+  
+  const renderedBuffer = await offlineContext.startRendering();
+  
+  // Convert to WAV format
+  const length = renderedBuffer.length;
+  const numberOfChannels = renderedBuffer.numberOfChannels;
+  const sampleRate = renderedBuffer.sampleRate;
+  const buffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+  const view = new DataView(buffer);
+  
+  // WAV header
+  const writeString = (offset, string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+  
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numberOfChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+  view.setUint16(32, numberOfChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, length * numberOfChannels * 2, true);
+  
+  // PCM data
   let offset = 44;
-  for (let i=0;i<pcm.length;i++){
-    let s = Math.max(-1, Math.min(1, pcm[i]));
-    dv.setInt16(offset, s < 0 ? s*0x8000 : s*0x7FFF, true);
-    offset += 2;
+  for (let i = 0; i < length; i++) {
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const sample = Math.max(-1, Math.min(1, renderedBuffer.getChannelData(channel)[i]));
+      view.setInt16(offset, sample * 0x7FFF, true);
+      offset += 2;
+    }
   }
-  return buffer;
+  
+  return new Blob([buffer], { type: 'audio/wav' });
 }
 
-function addMessage(msg, mine=false){
-  historyCache.push(msg);
-  try { localStorage.setItem(storageKey(roomId), JSON.stringify(historyCache).slice(0, 4_000_000)); } catch(_) {}
-
-  renderMessage(msg, mine, false);
-  els.messages.scrollTop = els.messages.scrollHeight;
+async function sendVoiceMessage(blob) {
+  const file = new File([blob], `voice_${Date.now()}.wav`, { type: 'audio/wav' });
+  await sendFile(file);
 }
 
-function renderMessage(msg, mine=false, restoring=false){
-  const li = document.createElement('li');
-  li.className = 'msg' + (mine ? ' me' : '');
-  const meta = document.createElement('div');
-  meta.className = 'meta';
-  const d = new Date(msg.ts || Date.now());
-  meta.textContent = `${msg.nick || 'anon'} • ${d.toLocaleTimeString()}`;
-  const body = document.createElement('div');
-
-  if (msg.kind === 'text') {
-    body.textContent = msg.text || '';
-  } else if (msg.kind === 'image') {
-    const bytes = base64urlToBytes(msg.data);
-    const blob = new Blob([bytes], {type: msg.mime || 'image/*'});
-    const img = document.createElement('img');
-    img.className = 'preview';
-    img.src = URL.createObjectURL(blob);
-    img.alt = msg.name || 'image';
-    body.appendChild(img);
-
-    const a = document.createElement('a');
-    a.href = img.src; a.download = msg.name || 'image';
-    a.textContent = `Скачать (${prettySize(msg.size)})`;
-    a.className = 'file';
-    body.appendChild(a);
-  } else if (msg.kind === 'audio') {
-    const bytes = base64urlToBytes(msg.data);
-    const blob = new Blob([bytes], {type: msg.mime || 'audio/wav'});
-    const url = URL.createObjectURL(blob);
-    const audio = document.createElement('audio');
-    audio.controls = true; audio.src = url;
-    body.appendChild(audio);
-
-    const a = document.createElement('a');
-    a.href = url; a.download = msg.name || 'voice.wav';
-    a.textContent = `Скачать голосовое (${prettySize(msg.size)})`;
-    a.className = 'file';
-    body.appendChild(a);
-  } else if (msg.kind === 'file') {
-    const bytes = base64urlToBytes(msg.data);
-    const blob = new Blob([bytes], {type: msg.mime || 'application/octet-stream'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = msg.name || 'file.bin';
-    a.textContent = `${msg.name || 'файл'} (${prettySize(msg.size)})`;
-    body.appendChild(a);
-  } else {
-    body.textContent = '[неизвестный тип]';
+// CSS animations for notifications
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
   }
-
-  li.appendChild(meta); li.appendChild(body);
-  els.messages.appendChild(li);
-}
-
-function prettySize(n){
-  if (!n && n !== 0) return '';
-  const kb = 1024, mb = kb*1024;
-  if (n >= mb) return (n/mb).toFixed(2) + ' MB';
-  if (n >= kb) return (n/kb).toFixed(1) + ' KB';
-  return n + ' B';
-}
-
-function bytesToBase64url(bytes) {
-  let bin = '';
-  for (let b of bytes) bin += String.fromCharCode(b);
-  let b64 = btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  return b64;
-}
-function base64urlToBytes(s) {
-  s = (s || '').replace(/-/g,'+').replace(/_/g,'/');
-  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
-  const bin = atob(s + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
+  
+  @keyframes slideOut {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+`;
+document.head.appendChild(style);
