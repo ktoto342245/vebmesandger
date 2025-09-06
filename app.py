@@ -15,8 +15,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#static_dir = os.path.join(os.path.dirname(__file__), "static")
-#app.mount("/static", StaticFiles(directory=static_dir), name="static")
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 rooms: dict[str, set[WebSocket]] = defaultdict(set)
 online_counts: dict[str, int] = defaultdict(int)
