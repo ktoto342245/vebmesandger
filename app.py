@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-static_dir = os.path.join(os.path.dirname(__file__), "static")
+#static_dir = os.path.join(os.path.dirname(__file__), "static")
 #app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 rooms: dict[str, set[WebSocket]] = defaultdict(set)
@@ -23,7 +23,10 @@ online_counts: dict[str, int] = defaultdict(int)
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    return FileResponse(os.path.join(static_dir, "index.html"))
+    index_file = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return HTMLResponse("<h1>Hello from FastAPI on Koyeb!</h1>")
 
 @app.get("/room/{room_id}", response_class=HTMLResponse)
 async def room_page(room_id: str):
