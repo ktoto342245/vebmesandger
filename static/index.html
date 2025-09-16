@@ -368,6 +368,24 @@
       box-shadow: 0 15px 40px rgba(255, 23, 68, 0.5);
     }
 
+    .btn-call {
+      background: linear-gradient(135deg, #00ff88, #00cc66);
+      color: white;
+      box-shadow: 0 8px 30px rgba(0, 255, 136, 0.3);
+      border-color: #00ff88;
+    }
+
+    .btn-call:hover {
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 15px 40px rgba(0, 255, 136, 0.5);
+    }
+
+    .btn-call.active {
+      background: linear-gradient(135deg, var(--red-neon), var(--red-bright));
+      border-color: var(--red-neon);
+      animation: recording-pulse 1s infinite;
+    }
+
     .info-panel {
       background: linear-gradient(135deg, 
         rgba(168, 85, 247, 0.1), 
@@ -675,6 +693,88 @@
       box-shadow: 0 15px 40px var(--red-glow);
     }
 
+    /* Video Call Styles */
+    .video-call-container {
+      display: none;
+      position: fixed;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 800px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      border: 2px solid rgba(0, 212, 255, 0.3);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: var(--shadow-deep);
+      z-index: 1000;
+    }
+
+    .video-call-container.active {
+      display: block;
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .video-wrapper {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 25px rgba(0, 212, 255, 0.1);
+    }
+
+    .video-wrapper video {
+      width: 100%;
+      height: auto;
+      background: black;
+    }
+
+    .video-label {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: var(--text-primary);
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .call-controls {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .call-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 2px solid var(--purple-plasma);
+      background: rgba(168, 85, 247, 0.1);
+      color: var(--purple-plasma);
+      font-size: 22px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .call-btn:hover {
+      background: rgba(168, 85, 247, 0.2);
+      transform: scale(1.1);
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.4);
+    }
+
     /* File Preview */
     .file-preview-box {
       padding: 18px;
@@ -756,6 +856,10 @@
       .chat-container {
         height: 50vh;
       }
+
+      .video-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* Floating Elements */
@@ -791,7 +895,7 @@
 
     @keyframes drift {
       0% {
-        transform: translateY(100vh) translateX(0) rotate(0deg);
+        transform: translateY(100vh) translateX(0) rotate( od deg);
         opacity: 0;
       }
       10% {
@@ -853,6 +957,23 @@
       <ul id="messages" class="messages-list"></ul>
     </main>
 
+    <div id="videoCallContainer" class="video-call-container">
+      <div class="video-grid">
+        <div class="video-wrapper">
+          <video id="localVideo" autoplay muted></video>
+          <div class="video-label">Ваше видео</div>
+        </div>
+        <div class="video-wrapper">
+          <video id="remoteVideo" autoplay></video>
+          <div class="video-label">Собеседник</div>
+        </div>
+      </div>
+      <div class="call-controls">
+        <button id="muteMic" class="call-btn" title="Отключить микрофон">🎙️</button>
+        <button id="muteCam" class="call-btn" title="Отключить камеру">📹</button>
+      </div>
+    </div>
+
     <footer class="glass-panel input-section">
       <div class="input-layout">
         <div class="input-area">
@@ -869,6 +990,7 @@
               <option value="deep">🎭 Низкий голос</option>
             </select>
             <button id="voiceBtn" class="voice-record-btn" title="Записать голосовое сообщение">🎙️</button>
+            <button id="callBtn" class="neon-btn btn-call" title="Начать видеозвонок">📞</button>
           </div>
         </div>
         <button id="send" class="send-message-btn" title="Отправить сообщение">➤</button>
@@ -881,6 +1003,7 @@
 // - Chunked transfer with progress bars (up to very large files)
 // - Text, images, files, voice messages with stronger disguise (robot / simple pitch)
 // - Local persistence; "End chat" button
+// - Video/audio calls with WebRTC
 // Security: demo-level AES-GCM with PBKDF2 key; server relays only.
 
 const qs = new URLSearchParams(location.hash.slice(1));
@@ -901,6 +1024,12 @@ const els = {
   fileInput: document.getElementById('fileInput'),
   voiceBtn: document.getElementById('voiceBtn'),
   voiceEffect: document.getElementById('voiceEffect'),
+  callBtn: document.getElementById('callBtn'),
+  videoCallContainer: document.getElementById('videoCallContainer'),
+  localVideo: document.getElementById('localVideo'),
+  remoteVideo: document.getElementById('remoteVideo'),
+  muteMic: document.getElementById('muteMic'),
+  muteCam: document.getElementById('muteCam'),
 };
 
 let ws = null;
@@ -908,6 +1037,8 @@ let key = null;
 let secretB = null;
 let saltB = null;
 let meId = randomId(6);
+let peerConnection = null;
+let localStream = null;
 
 // local persistence
 function storageKey(room){ return `MES_${room}`; }
@@ -961,6 +1092,7 @@ async function init() {
   els.endChat.onclick = () => {
     if (!roomId) return;
     localStorage.removeItem(storageKey(roomId));
+    stopCall();
     location.href = `${location.origin}/room/${roomId}`;
   };
 
@@ -971,6 +1103,9 @@ async function init() {
 
   els.fileInput.addEventListener('change', handleFiles);
   els.voiceBtn.addEventListener('click', handleVoice);
+  els.callBtn.addEventListener('click', handleCall);
+  els.muteMic.addEventListener('click', toggleMic);
+  els.muteCam.addEventListener('click', toggleCam);
 }
 
 function setOnline(){ els.statusDot.classList.add('online'); els.statusText.textContent='online'; }
@@ -1009,8 +1144,8 @@ function connect() {
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => { setOnline(); notify(`Подключено к комнате ${roomId}`); };
-  ws.onclose = () => { setOffline(); notify('Соединение закрыто'); };
-  ws.onerror = () => { setOffline(); notify('Ошибка соединения'); };
+  ws.onclose = () => { setOffline(); notify('Соединение закрыто'); stopCall(); };
+  ws.onerror = () => { setOffline(); notify('Ошибка соединения'); stopCall(); };
 
   ws.onmessage = async (ev) => {
     let dataStr = typeof ev.data === 'string' ? ev.data : await ev.data.text();
@@ -1069,15 +1204,174 @@ function onDecryptedMessage(msg){
       assembling.delete(id);
     }
     return;
+  } else if (msg.kind === 'call') {
+    handleSignalingMessage(msg);
+    return;
   }
   // regular messages (text)
   addMessage(msg, false);
 }
 
+async function handleCall() {
+  if (peerConnection) {
+    stopCall();
+    return;
+  }
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    els.localVideo.srcObject = localStream;
+    els.videoCallContainer.classList.add('active');
+    els.callBtn.classList.add('active');
+    els.callBtn.textContent = '🔴';
+    els.callBtn.title = 'Завершить звонок';
+
+    const configuration = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+      ]
+    };
+    peerConnection = new RTCPeerConnection(configuration);
+
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.ontrack = (event) => {
+      els.remoteVideo.srcObject = event.streams[0];
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        const payload = nowPayloadBase('call', {
+          type: 'candidate',
+          candidate: event.candidate
+        });
+        encryptAndSend(payload);
+      }
+    };
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    const payload = nowPayloadBase('call', {
+      type: 'offer',
+      sdp: offer
+    });
+    await encryptAndSend(payload);
+    notify('Звонок начат...');
+  } catch (e) {
+    console.error(e);
+    notify('Не удалось начать звонок');
+    stopCall();
+  }
+}
+
+async function handleSignalingMessage(msg) {
+  if (!peerConnection && msg.type !== 'offer') return;
+
+  if (msg.type === 'offer') {
+    if (peerConnection) return; // Ignore if already in a call
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      els.localVideo.srcObject = localStream;
+      els.videoCallContainer.classList.add('active');
+      els.callBtn.classList.add('active');
+      els.callBtn.textContent = '🔴';
+      els.callBtn.title = 'Завершить звонок';
+
+      const configuration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+        ]
+      };
+      peerConnection = new RTCPeerConnection(configuration);
+
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+      peerConnection.ontrack = (event) => {
+        els.remoteVideo.srcObject = event.streams[0];
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          const payload = nowPayloadBase('call', {
+            type: 'candidate',
+            candidate: event.candidate
+          });
+          encryptAndSend(payload);
+        }
+      };
+
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      const payload = nowPayloadBase('call', {
+        type: 'answer',
+        sdp: answer
+      });
+      await encryptAndSend(payload);
+      notify('Звонок принят...');
+    } catch (e) {
+      console.error(e);
+      notify('Не удалось принять звонок');
+      stopCall();
+    }
+  } else if (msg.type === 'answer' && peerConnection) {
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } catch (e) {
+      console.error(e);
+      notify('Ошибка обработки ответа звонка');
+    }
+  } else if (msg.type === 'candidate' && peerConnection) {
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    } catch (e) {
+      console.error(e);
+      notify('Ошибка добавления ICE-кандидата');
+    }
+  }
+}
+
+function stopCall() {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
+  els.localVideo.srcObject = null;
+  els.remoteVideo.srcObject = null;
+  els.videoCallContainer.classList.remove('active');
+  els.callBtn.classList.remove('active');
+  els.callBtn.textContent = '📞';
+  els.callBtn.title = 'Начать видеозвонок';
+  notify('Звонок завершен');
+}
+
+function toggleMic() {
+  if (localStream) {
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      els.muteMic.textContent = audioTrack.enabled ? '🎙️' : '🔇';
+    }
+  }
+}
+
+function toggleCam() {
+  if (localStream) {
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      els.muteCam.textContent = videoTrack.enabled ? '📹' : '📷';
+    }
+  }
+}
+
 function nowPayloadBase(type, extra={}){
   return {
     id: crypto.randomUUID(),
-    kind: type, // 'text' | 'image' | 'file' | 'audio' | 'chunk'
+    kind: type, // 'text' | 'image' | 'file' | 'audio' | 'chunk' | 'call'
     sender: meId,
     nick: els.nickname.value.trim().slice(0, 24) || 'anon',
     ts: Date.now(),
